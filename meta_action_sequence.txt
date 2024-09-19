@@ -1,0 +1,2 @@
+['eat(1)', 'navigate_to(park)', 'navigate_to(museum)', 'eat(2)', 'navigate_to(café)', 'explore(new place)', 'talk(café or new place)', 'eat(3)', 'sleep(8)']
+['eat(1)', 'navigate_to(park)', 'explore(park)', 'navigate_to(museum)', 'explore(museum)', 'eat(2)', 'navigate_to(café)', 'talk(café)', 'eat(3)', 'sleep(8)']

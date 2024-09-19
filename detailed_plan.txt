@@ -1,0 +1,20 @@
+每天的日常任务
+
+'daily_objective': 
+
+['Traveling: Visit at least three different locations today',
+ "Exploring: Discover a new place you've never been to",
+  'Socializing: Meet someone new during your travels']
+
+详细计划：
+Traveling: "I should navigate to three different locations today, starting with a park at 8:30 AM, then a museum at 11:00 AM, and finally a café at 2:00 PM." 
+Exploring: "I should discover a new place I've never been to, perhaps a hidden gem in the city, around 3:30 PM after visiting the café." 
+Socializing: "I should meet someone new during my travels, maybe by talking to someone at the café or the new place I explore." 
+Daily Actions: "I should eat breakfast at 8:00 AM, lunch at 12:30 PM, and dinner at 6:30 PM. I should also take breaks in between to relax and enjoy the surroundings." 
+Random Actions: "I could chat with friends over the phone during my breaks or after dinner to share my experiences."
+
+生成的meta action
+raw
+['eat(1)', 'navigate_to(park)', 'navigate_to(museum)', 'eat(2)', 'navigate_to(café)', 'explore(new place)', 'talk(café or new place)', 'eat(3)', 'sleep(8)']
+经过了修正器（让llm判断上面的序列是否可达，是否符合常识）
+['eat(1)', 'navigate_to(park)', 'explore(park)', 'navigate_to(museum)', 'explore(museum)', 'eat(2)', 'navigate_to(café)', 'talk(café)', 'eat(3)', 'sleep(8)']
