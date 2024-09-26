@@ -29,13 +29,7 @@ class VectorSearchApp:
 
 if __name__ == "__main__":
     app = VectorSearchApp()
-
-    # Specify the fields you want to return
-    # fields_to_return = ["API", "text", "code"]
-    fields_to_return = ["code"]
-
-    # Specify the collection name
-    collection_name = config.tool_collection_name  # or any other collection name
-
-    # Perform the search
-    app.perform_vector_search("我要换工作", fields_to_return, collection_name)
+    app.perform_vector_search("我要换工作", ["code"], config.tool_collection_name)
+    app.perform_vector_search(
+        "生活习惯", ["npc_ids", "dialogue"], config.conversation_collection_name
+    )

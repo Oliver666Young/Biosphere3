@@ -507,6 +507,33 @@ class DatabaseSetupApp:
         collection.drop()
         print(f"Collection '{config.tool_collection_name}' deleted.")
 
+        # 新建集合
+        collection_name = config.tool_collection_name
+        # 创建验证器
+        validator = {
+            "$jsonSchema": {
+                "bsonType": "object",
+                "required": ["API", "text", "code"],
+                "properties": {
+                    "API": {
+                        "bsonType": "string",
+                        "description": "API的名称，必须为字符串且为必填项",
+                    },
+                    "text": {
+                        "bsonType": "string",
+                        "description": "工具的描述文本，必须为字符串且为必填项",
+                    },
+                    "code": {
+                        "bsonType": "string",
+                        "description": "工具的代码段，必须为字符串且为必填项",
+                    },
+                },
+            }
+        }
+        # 创建带有验证器的集合
+        db.create_collection(collection_name, validator=validator)
+        print(f"Collection '{collection_name}' created with validator.")
+
         # Load and prepare data
         API_df = load_and_prepare_data("API.json")
         print("API Data loaded and prepared.")
@@ -549,6 +576,113 @@ class DatabaseSetupApp:
                 print("Vector search index is not ready. Waiting...")
                 time.sleep(5)
 
+    def setup_conversation_database(self):
+        # Connect to MongoDB collection
+        db = connect_to_mongo(
+            db_name=config.db_name,
+            mongo_uri=config.mongo_uri,
+        )
+
+        # 删除现有集合
+        collection = db[config.conversation_collection_name]
+        collection.drop_indexes()
+        print(
+            f"Indexes dropped for collection '{config.conversation_collection_name}'."
+        )
+
+        try:
+            collection.drop_search_index(config.index_name)
+            while list(collection.list_search_indexes()):
+                print("Atlas is deleting the index. Waiting...")
+                time.sleep(5)
+            print(
+                f"Search indexes dropped for collection '{config.conversation_collection_name}'."
+            )
+        except Exception as e:
+            print("Search indexes not exist.")
+
+        # Delete existing collection
+        collection.drop()
+        print(f"Collection '{config.conversation_collection_name}' deleted.")
+
+        # 新建集合
+        collection_name = config.conversation_collection_name
+        # 创建验证器
+        validator = {
+            "$jsonSchema": {
+                "bsonType": "object",
+                "required": ["npc_ids", "dialogue", "created_at"],
+                "properties": {
+                    "npc_ids": {
+                        "bsonType": "array",
+                        "description": "包含参与对话的NPC ID的数组，必须为字符串数组且为必填项",
+                        "items": {
+                            "bsonType": "string",
+                            "description": "NPC的ID，必须为字符串",
+                        },
+                    },
+                    "dialogue": {
+                        "bsonType": "string",
+                        "description": "对话内容，必须为字符串且为必填项",
+                    },
+                    "created_at": {
+                        "bsonType": "string",
+                        "description": "创建时间，必须为字符串且为必填项",
+                    },
+                },
+            }
+        }
+
+        # 创建带有验证器的集合
+        db.create_collection(collection_name, validator=validator)
+        print(f"Collection '{collection_name}' created with validator.")
+
+        # Load and prepare conversation data
+        conversation_df = load_and_prepare_data("CONVERSATION.json")
+        print("Conversation data loaded and prepared.")
+
+        # Create embeddings for conversation data
+        conversation_df = create_embeddings(
+            conversation_df,
+            "dialogue",
+            config.model_name,
+            config.base_url,
+            config.api_key,
+        )
+        print(conversation_df.head())
+        print("Conversation embeddings created.")
+
+        # Save embeddings to MongoDB Atlas
+        save_to_mongo(
+            conversation_df,
+            config.db_name,
+            config.conversation_collection_name,
+            config.mongo_uri,
+        )
+        print("Conversation embeddings saved to MongoDB Atlas.")
+
+        # Create vector search index for conversation collection
+        create_vector_search_index(
+            config.db_name,
+            config.conversation_collection_name,
+            config.mongo_uri,
+            config.index_name,
+            config.num_dimensions,
+            config.similarity,
+        )
+
+        # 检查向量搜索索引是否准备就绪
+        while True:
+            cursor = collection.list_search_indexes()
+            index_info = list(cursor)[0]
+
+            if index_info["status"] == "READY":
+                print("Conversation vector search index is ready.")
+                break
+            else:
+                print("Conversation vector search index is not ready. Waiting...")
+                time.sleep(5)
+
 
 if __name__ == "__main__":
     app = DatabaseSetupApp()
@@ -561,3 +695,4 @@ if __name__ == "__main__":
     app.setup_daily_objective_database()
     app.setup_plan_database()
     app.setup_meta_seq_database()
+    app.setup_conversation_database()
