@@ -140,7 +140,7 @@ print("Response Body:", response.json())
 用于存储NPC执行的动作信息，包含以下字段：
 
 - `userid`：NPC ID，必须为整数且为必填项
-- `timestamp`：时间戳，必须为字符串且为必填项
+- `created_at`：时间戳，必须为字符串且为必填项
 - `meta_action`：当前执行的动作，必须为字符串且为必填项
 - `description`：大语言模型返回的结果，必须为字符串且为必填项
 - `response`：执行是否成功，必须为布尔类型且为必填项
@@ -152,7 +152,7 @@ print("Response Body:", response.json())
 ```json
 {
     "userid": 1,
-    "timestamp": "2024-08-02 13:30:00",
+    "created_at": "2024-08-02 13:30:00",
     "meta_action": "Pick an apple",
     "description": "Alice successfully picked a red apple from the tree.",
     "response": true,
@@ -167,26 +167,17 @@ print("Response Body:", response.json())
 
 - `from_id`：印象来源的NPC的ID，必须为整数且为必填项
 - `to_id`：印象指向的NPC的ID，必须为整数且为必填项
-- `impression`：印象数组，必须为对象数组且为必填项
-  - `content`：印象内容，必须为字符串且为必填项
-  - `timestamp`：时间戳，必须为字符串且为必填项
+- `impression`：印象内容，必须为字符串且为必填项
+- `created_at`：时间戳，必须为字符串且为必填项
 
-例子：
+每条印象独立存储为一条文档，例子：
 
 ```json
 {
     "from_id": 1,
     "to_id": 2,
-    "impression": [
-        {
-            "content": "Bob seems friendly and helpful.",
-            "timestamp": "2024-08-02 13:30:00"
-        },
-        {
-            "content": "Bob knows a lot about the hidden treasure.",
-            "timestamp": "2023-06-10 14:00:00"
-        }
-    ]
+    "impression": "Bob seems friendly and helpful.",
+    "created_at": "2024-08-02 13:30:00"
 }
 ```
 
@@ -294,7 +285,7 @@ print("Response Body:", response.json())
 
 用于存储NPC之间的对话信息，包含以下字段：
 
-- `npc_ids`：包含参与对话的NPC ID的数组，必须为字符串数组且为必填项
+- `npc_ids`：包含参与对话的NPC ID的数组，必须为整数数组且为必填项
 - `dialogue`：对话内容，必须为字符串且为必填项
 - `created_at`：创建日期，必须为字符串且为必填项，格式为'YYYY-MM-DD HH:MM:SS'
 
@@ -302,8 +293,26 @@ print("Response Body:", response.json())
 
 ```json
 {
-    "npc_ids": ["1", "5"],
+    "npc_ids": [1, 5],
     "dialogue": "Alice: Hi Eva! You always seem so healthy and energetic. What’s your secret?\nEva: It’s all about maintaining a balanced lifestyle. I make sure to get enough sleep and eat nutritious food. How about you, Alice? You must be busy with your studies.\nAlice: Yes, I’ve been studying non-stop for the finals. It’s exhausting, but I know it will be worth it.\nEva: Just remember to take breaks and stay healthy. Good health is the foundation of everything.",
     "created_at": "2024-08-03 10:00:00"
+}
+```
+
+## 11. diary
+
+用于存储用户的日记信息，包含以下字段：
+
+- `userid`：用户的ID，必须为整数且为必填项
+- `diary_content`：日记内容，必须为字符串且为必填项
+- `created_at`：创建日期，必须为字符串且为必填项，格式为'YYYY-MM-DD HH:MM:SS'
+
+例子：
+
+```json
+{
+    "userid": 3,
+    "diary_content": "Today was a productive day! I managed to finish my project and had a great workout.",
+    "created_at": "2024-10-05 18:30:00"
 }
 ```
