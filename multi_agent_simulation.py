@@ -11,6 +11,9 @@ import os
 from loguru import logger
 from tool_executor import trade_item
 from database.mongo_utils import get_latest_k_documents
+from database import config
+
+
 tool_functions = """
 1. do_freelance_job(): Perform freelance work
 2. navigate_to(location): Navigate to a specified location
@@ -180,7 +183,9 @@ Wake up at 7 AM, go to the park and chat with people for 1 hour, study at school
             """,
             "tool_functions": tool_functions,
             "locations": locations,
-            "past_objectives": get_latest_k_documents("daily_objective", 2, self.userid),
+            "past_objectives": get_latest_k_documents(
+                config.daily_objective_collection_name, self.userid, 2, "objectives"
+            ),
         }
 
     def update_stats(self):

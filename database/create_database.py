@@ -1,5 +1,5 @@
 from load_dataset import load_and_prepare_data
-from create_vector_embeddings import create_embeddings
+from create_vector_embeddings import embed_dataframe
 from save_to_atlas import save_to_mongo
 from create_vector_index import create_vector_search_index
 from mongo_utils import connect_to_mongo
@@ -8,21 +8,105 @@ import time
 
 
 class DatabaseSetupApp:
-    def setup_cv_database(self):
-        # Connect to MongoDB collection
-        db = connect_to_mongo(
+    def __init__(self):
+        # Initialize the database connection
+        self.db = connect_to_mongo(
             db_name=config.db_name,
             mongo_uri=config.mongo_uri,
         )
+        self.collections = []
 
-        # 删除现有集合
-        collection = db[config.cv_collection_name]
-        collection.drop()
-        print(f"Collection '{config.cv_collection_name}' deleted.")
+    def delete_and_create_collection(self, collection_name, validator):
+        # Delete existing collection if it exists
+        collection = self.db[collection_name]
+        if collection_name in self.db.list_collection_names():
+            collection.drop()
+            print(f"Collection '{collection_name}' deleted.")
 
-        # 新建集合
-        collection_name = config.cv_collection_name
-        # 创建验证器
+        # Create new collection with validator
+        self.db.create_collection(collection_name, validator=validator)
+        print(f"Collection '{collection_name}' created with validator.")
+        return self.db[collection_name]
+
+    def load_and_prepare_data(self, file_name):
+        # Load and prepare data from a JSON file
+        df = load_and_prepare_data(file_name)
+        print(f"Data from '{file_name}' loaded and prepared.")
+        return df
+
+    def create_and_save_embeddings(
+        self, df, text_column, collection_name, create_index=False
+    ):
+        # Create embeddings
+        df = embed_dataframe(
+            df,
+            text_column,
+            config.model_name,
+            config.base_url,
+            config.api_key,
+        )
+        print(f"Embeddings created for collection '{collection_name}'.")
+
+        # Save embeddings to MongoDB Atlas
+        save_to_mongo(df, config.db_name, collection_name, config.mongo_uri)
+        print(f"Data saved to MongoDB Atlas for collection '{collection_name}'.")
+
+        # Create vector search index if needed
+        if create_index:
+            self.create_vector_search_index(collection_name)
+
+    def create_vector_search_index(self, collection_name):
+        # Create vector search index
+        create_vector_search_index(
+            config.db_name,
+            collection_name,
+            config.mongo_uri,
+            config.index_name,
+            config.num_dimensions,
+            config.similarity,
+        )
+        collection = self.db[collection_name]
+
+        # Wait until the index is ready
+        while True:
+            cursor = collection.list_search_indexes()
+            index_info = list(cursor)[0]
+
+            if index_info["status"] == "READY":
+                print(
+                    f"Vector search index is ready for collection '{collection_name}'."
+                )
+                break
+            else:
+                print(
+                    f"Vector search index is not ready for collection '{collection_name}'. Waiting..."
+                )
+                time.sleep(5)
+
+    def setup_database_with_data(
+        self,
+        collection_name,
+        validator,
+        data_file,
+        text_column=None,
+        create_embeddings=False,
+        create_index=False,
+    ):
+        # Load and prepare data
+        df = self.load_and_prepare_data(data_file)
+        print(df.head())
+
+        if create_embeddings and text_column:
+            # Create embeddings and save data
+            self.create_and_save_embeddings(
+                df, text_column, collection_name, create_index
+            )
+        else:
+            # Save data without embeddings
+            save_to_mongo(df, config.db_name, collection_name, config.mongo_uri)
+            print(f"Data saved to MongoDB Atlas for collection '{collection_name}'.")
+
+    def setup_cv_database(self):
         validator = {
             "$jsonSchema": {
                 "bsonType": "object",
@@ -51,33 +135,14 @@ class DatabaseSetupApp:
                 },
             }
         }
-        # 创建带有验证器的集合
-        db.create_collection(collection_name, validator=validator)
-        print(f"Collection '{collection_name}' created with validator.")
-        CV_df = load_and_prepare_data("CV.json")
-        print("CV Data loaded and prepared.")
-        print(CV_df.head())
-
-        save_to_mongo(
-            CV_df, config.db_name, config.cv_collection_name, config.mongo_uri
+        self.delete_and_create_collection(config.cv_collection_name, validator)
+        self.setup_database_with_data(
+            config.cv_collection_name,
+            validator,
+            "CV.json",
         )
-        print("CV Data saved to MongoDB Atlas.")
 
     def setup_npc_database(self):
-        # Connect to MongoDB collection
-        db = connect_to_mongo(
-            db_name=config.db_name,
-            mongo_uri=config.mongo_uri,
-        )
-
-        # 删除现有集合
-        collection = db[config.npc_collection_name]
-        collection.drop()
-        print(f"Collection '{config.npc_collection_name}' deleted.")
-
-        # 新建集合
-        collection_name = config.npc_collection_name
-        # 创建验证器
         validator = {
             "$jsonSchema": {
                 "bsonType": "object",
@@ -145,39 +210,20 @@ class DatabaseSetupApp:
                 },
             }
         }
-        # 创建带有验证器的集合
-        db.create_collection(collection_name, validator=validator)
-        print(f"Collection '{collection_name}' created with validator.")
-        NPC_df = load_and_prepare_data("NPC.json")
-        print("NPC Data loaded and prepared.")
-        print(NPC_df.head())
-
-        save_to_mongo(
-            NPC_df, config.db_name, config.npc_collection_name, config.mongo_uri
+        self.delete_and_create_collection(config.npc_collection_name, validator)
+        self.setup_database_with_data(
+            config.npc_collection_name,
+            validator,
+            "NPC.json",
         )
-        print("NPC Data saved to MongoDB Atlas.")
 
     def setup_action_database(self):
-        # Connect to MongoDB collection
-        db = connect_to_mongo(
-            db_name=config.db_name,
-            mongo_uri=config.mongo_uri,
-        )
-
-        # 删除现有集合
-        collection = db[config.action_collection_name]
-        collection.drop()
-        print(f"Collection '{config.action_collection_name}' deleted.")
-
-        # 新建集合
-        collection_name = config.action_collection_name
-        # 创建验证器
         validator = {
             "$jsonSchema": {
                 "bsonType": "object",
                 "required": [
                     "userid",
-                    "timestamp",
+                    "created_at",
                     "meta_action",
                     "description",
                     "response",
@@ -188,7 +234,7 @@ class DatabaseSetupApp:
                         "bsonType": "int",
                         "description": "NPC ID,必须为整数且为必填项",
                     },
-                    "timestamp": {
+                    "created_at": {
                         "bsonType": "string",
                         "description": "时间戳,必须为字符串且为必填项",
                     },
@@ -215,78 +261,36 @@ class DatabaseSetupApp:
                 },
             }
         }
-        # 创建带有验证器的集合
-        db.create_collection(collection_name, validator=validator)
-        print(f"Collection '{collection_name}' created with validator.")
+        self.delete_and_create_collection(config.action_collection_name, validator)
 
     def setup_impression_database(self):
-        # Connect to MongoDB collection
-        db = connect_to_mongo(
-            db_name=config.db_name,
-            mongo_uri=config.mongo_uri,
-        )
-
-        # 删除现有集合
-        collection = db[config.impression_collection_name]
-        collection.drop()
-        print(f"Collection '{config.impression_collection_name}' deleted.")
-
-        # 新建集合
-        collection_name = config.impression_collection_name
-        # 创建验证器
         validator = {
             "$jsonSchema": {
                 "bsonType": "object",
-                "required": ["from_id", "to_id", "impression"],
+                "required": ["from_id", "to_id", "impression", "created_at"],
                 "properties": {
                     "from_id": {
                         "bsonType": "int",
-                        "description": "表示印象来源的 NPC 的 ID,必须为整数且为必填项",
+                        "description": "表示印象来源的 NPC 的 ID, 必须为整数且为必填项",
                     },
                     "to_id": {
                         "bsonType": "int",
-                        "description": "表示印象指向的 NPC 的 ID,必须为整数且为必填项",
+                        "description": "表示印象指向的 NPC 的 ID, 必须为整数且为必填项",
                     },
                     "impression": {
-                        "bsonType": "array",
-                        "description": "印象数组,必须为对象数组且为必填项",
-                        "items": {
-                            "bsonType": "object",
-                            "required": ["content", "timestamp"],
-                            "properties": {
-                                "content": {
-                                    "bsonType": "string",
-                                    "description": "印象内容,必须为字符串且为必填项",
-                                },
-                                "timestamp": {
-                                    "bsonType": "string",
-                                    "description": "时间戳,必须为字符串且为必填项",
-                                },
-                            },
-                        },
+                        "bsonType": "string",
+                        "description": "印象内容, 必须为字符串且为必填项",
+                    },
+                    "created_at": {
+                        "bsonType": "string",
+                        "description": "时间戳, 必须为字符串且为必填项",
                     },
                 },
             }
         }
-        # 创建带有验证器的集合
-        db.create_collection(collection_name, validator=validator)
-        print(f"Collection '{collection_name}' created with validator.")
+        self.delete_and_create_collection(config.impression_collection_name, validator)
 
     def setup_descriptor_database(self):
-        # Connect to MongoDB collection
-        db = connect_to_mongo(
-            db_name=config.db_name,
-            mongo_uri=config.mongo_uri,
-        )
-
-        # 删除现有集合
-        collection = db[config.descriptor_collection_name]
-        collection.drop()
-        print(f"Collection '{config.descriptor_collection_name}' deleted.")
-
-        # 新建集合
-        collection_name = config.descriptor_collection_name
-        # 创建验证器
         validator = {
             "$jsonSchema": {
                 "bsonType": "object",
@@ -311,65 +315,9 @@ class DatabaseSetupApp:
                 },
             }
         }
-        # 创建带有验证器的集合
-        db.create_collection(collection_name, validator=validator)
-        print(f"Collection '{collection_name}' created with validator.")
+        self.delete_and_create_collection(config.descriptor_collection_name, validator)
 
     def setup_daily_objective_database(self):
-        # Connect to MongoDB collection
-        db = connect_to_mongo(
-            db_name=config.db_name,
-            mongo_uri=config.mongo_uri,
-        )
-
-        # Delete existing collection
-        collection = db[config.daily_objective_collection_name]
-        collection.drop()
-        print(f"Collection '{config.daily_objective_collection_name}' deleted.")
-
-        # Create new collection with validator
-        collection_name = config.daily_objective_collection_name
-        validator = {
-            "$jsonSchema": {
-                "bsonType": "object",
-                "required": ["userid", "created_at", "objectives"],
-                "properties": {
-                    "userid": {
-                        "bsonType": "int",
-                        "description": "User ID, must be a string and is required",
-                    },
-                    "created_at": {
-                        "bsonType": "string",
-                        "description": "Creation date, must be a string and is required",
-                    },
-                    "objectives": {
-                        "bsonType": "array",
-                        "description": "Array of objectives, must be an array of strings and is required",
-                        "items": {
-                            "bsonType": "string",
-                        },
-                    },
-                },
-            }
-        }
-        db.create_collection(collection_name, validator=validator)
-        print(f"Collection '{collection_name}' created with validator.")
-
-    def setup_daily_objective_database(self):
-        # 连接到 MongoDB 集合
-        db = connect_to_mongo(
-            db_name=config.db_name,
-            mongo_uri=config.mongo_uri,
-        )
-
-        # 删除现有集合
-        collection = db[config.daily_objective_collection_name]
-        collection.drop()
-        print(f"Collection '{config.daily_objective_collection_name}' deleted.")
-
-        # 新建集合
-        collection_name = config.daily_objective_collection_name
-        # 创建验证器
         validator = {
             "$jsonSchema": {
                 "bsonType": "object",
@@ -394,25 +342,11 @@ class DatabaseSetupApp:
                 },
             }
         }
-        # 创建带有验证器的集合
-        db.create_collection(collection_name, validator=validator)
-        print(f"Collection '{collection_name}' created with validator.")
-
-    def setup_plan_database(self):
-        # 连接到 MongoDB 集合
-        db = connect_to_mongo(
-            db_name=config.db_name,
-            mongo_uri=config.mongo_uri,
+        self.delete_and_create_collection(
+            config.daily_objective_collection_name, validator
         )
 
-        # 删除现有集合
-        collection = db[config.plan_collection_name]
-        collection.drop()
-        print(f"Collection '{config.plan_collection_name}' deleted.")
-
-        # 新建集合
-        collection_name = config.plan_collection_name
-        # 创建验证器
+    def setup_plan_database(self):
         validator = {
             "$jsonSchema": {
                 "bsonType": "object",
@@ -433,25 +367,9 @@ class DatabaseSetupApp:
                 },
             }
         }
-        # 创建带有验证器的集合
-        db.create_collection(collection_name, validator=validator)
-        print(f"Collection '{collection_name}' created with validator.")
+        self.delete_and_create_collection(config.plan_collection_name, validator)
 
     def setup_meta_seq_database(self):
-        # 连接到 MongoDB 集合
-        db = connect_to_mongo(
-            db_name=config.db_name,
-            mongo_uri=config.mongo_uri,
-        )
-
-        # 删除现有集合
-        collection = db[config.meta_seq_collection_name]
-        collection.drop()
-        print(f"Collection '{config.meta_seq_collection_name}' deleted.")
-
-        # 新建集合
-        collection_name = config.meta_seq_collection_name
-        # 创建验证器
         validator = {
             "$jsonSchema": {
                 "bsonType": "object",
@@ -476,88 +394,132 @@ class DatabaseSetupApp:
                 },
             }
         }
-        # 创建带有验证器的集合
-        db.create_collection(collection_name, validator=validator)
-        print(f"Collection '{collection_name}' created with validator.")
+        self.delete_and_create_collection(config.meta_seq_collection_name, validator)
 
-    def setup_tool_database(self):
-        # Connect to MongoDB collection
-        db = connect_to_mongo(
-            db_name=config.db_name,
-            mongo_uri=config.mongo_uri,
-        )
+    def setup_diary_database(self):
+        validator = {
+            "$jsonSchema": {
+                "bsonType": "object",
+                "required": ["userid", "diary_content", "created_at"],
+                "properties": {
+                    "userid": {
+                        "bsonType": "int",
+                        "description": "用户ID,必须为整数且为必填项",
+                    },
+                    "diary_content": {
+                        "bsonType": "string",
+                        "description": "日记内容,必须为字符串且为必填项",
+                    },
+                    "created_at": {
+                        "bsonType": "string",
+                        "description": "创建时间,必须为字符串且为必填项",
+                    },
+                },
+            }
+        }
+        self.delete_and_create_collection(config.diary_collection_name, validator)
 
-        # 删除现有集合
-        collection = db[config.tool_collection_name]
+    def drop_indexes(self, collection_name):
+        collection = self.db[collection_name]
         collection.drop_indexes()
-        print(f"Indexes dropped for collection '{config.tool_collection_name}'.")
+        print(f"Indexes dropped for collection '{collection_name}'.")
 
         try:
             collection.drop_search_index(config.index_name)
             while list(collection.list_search_indexes()):
-                print("Atlas is deleting the index. Waiting...")
+                print(
+                    f"Atlas is deleting the index for collection '{collection_name}'. Waiting..."
+                )
                 time.sleep(5)
-            print(
-                f"Search indexes dropped for collection '{config.tool_collection_name}'."
-            )
+            print(f"Search indexes dropped for collection '{collection_name}'.")
         except Exception as e:
-            print(f"Search indexes not exist.")
+            print(f"Search indexes do not exist for collection '{collection_name}'.")
 
-        # Delete existing collection
-        collection.drop()
-        print(f"Collection '{config.tool_collection_name}' deleted.")
+    def setup_tool_database(self):
+        # Drop indexes and collection
+        self.drop_indexes(config.tool_collection_name)
 
-        # Load and prepare data
-        API_df = load_and_prepare_data("API.json")
-        print("API Data loaded and prepared.")
-
-        # Create embeddings
-        API_df = create_embeddings(
-            API_df,
-            "text",
-            config.model_name,
-            config.base_url,
-            config.api_key,
-        )
-        print(API_df.head())
-        print("API Embeddings created.")
-
-        # Save embeddings to MongoDB Atlas
-        save_to_mongo(
-            API_df, config.db_name, config.tool_collection_name, config.mongo_uri
-        )
-        print("API Embeddings saved to MongoDB Atlas.")
-
-        # Create vector search index
-        create_vector_search_index(
-            config.db_name,
+        validator = {
+            "$jsonSchema": {
+                "bsonType": "object",
+                "required": ["API", "text", "code"],
+                "properties": {
+                    "API": {
+                        "bsonType": "string",
+                        "description": "API的名称，必须为字符串且为必填项",
+                    },
+                    "text": {
+                        "bsonType": "string",
+                        "description": "工具的描述文本，必须为字符串且为必填项",
+                    },
+                    "code": {
+                        "bsonType": "string",
+                        "description": "工具的代码段，必须为字符串且为必填项",
+                    },
+                },
+            }
+        }
+        self.delete_and_create_collection(config.tool_collection_name, validator)
+        self.setup_database_with_data(
             config.tool_collection_name,
-            config.mongo_uri,
-            config.index_name,
-            config.num_dimensions,
-            config.similarity,
+            validator,
+            "API.json",
+            text_column="text",
+            create_embeddings=True,
+            create_index=True,
         )
 
-        while True:
-            cursor = collection.list_search_indexes()
-            index_info = list(cursor)[0]
+    def setup_conversation_database(self):
+        # Drop indexes and collection
+        self.drop_indexes(config.conversation_collection_name)
 
-            if index_info["status"] == "READY":
-                print("Vector search index is ready.")
-                break
-            else:
-                print("Vector search index is not ready. Waiting...")
-                time.sleep(5)
+        validator = {
+            "$jsonSchema": {
+                "bsonType": "object",
+                "required": ["npc_ids", "dialogue", "created_at"],
+                "properties": {
+                    "npc_ids": {
+                        "bsonType": "array",
+                        "description": "包含参与对话的NPC ID的数组，必须为整数数组且为必填项",
+                        "items": {
+                            "bsonType": "int",
+                            "description": "NPC的ID，必须为整数",
+                        },
+                    },
+                    "dialogue": {
+                        "bsonType": "string",
+                        "description": "对话内容，必须为字符串且为必填项",
+                    },
+                    "created_at": {
+                        "bsonType": "string",
+                        "description": "创建时间，必须为字符串且为必填项",
+                    },
+                },
+            }
+        }
+        self.delete_and_create_collection(
+            config.conversation_collection_name, validator
+        )
+        self.setup_database_with_data(
+            config.conversation_collection_name,
+            validator,
+            "CONVERSATION.json",
+            text_column="dialogue",
+            create_embeddings=True,
+            create_index=True,
+        )
 
 
 if __name__ == "__main__":
     app = DatabaseSetupApp()
-    app.setup_cv_database()
-    app.setup_npc_database()
-    app.setup_action_database()
-    app.setup_impression_database()
-    app.setup_descriptor_database()
-    app.setup_tool_database()
-    app.setup_daily_objective_database()
-    app.setup_plan_database()
-    app.setup_meta_seq_database()
+    # app.setup_cv_database()
+    # app.setup_npc_database()
+    # app.setup_action_database()
+    # app.setup_impression_database()
+    # app.setup_descriptor_database()
+    # app.setup_tool_database()
+    # app.setup_daily_objective_database()
+    # app.setup_plan_database()
+    # app.setup_meta_seq_database()
+    app.setup_conversation_database()
+    # app.setup_diary_database()

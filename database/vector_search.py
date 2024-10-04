@@ -1,4 +1,4 @@
-from create_vector_embeddings import get_embedding
+from create_vector_embeddings import embed_text
 from mongo_utils import connect_to_mongo
 
 
@@ -16,7 +16,7 @@ def vector_search(
     num_candidates=100,
 ):
     # Generate embedding for the search query
-    query_embedding = get_embedding(query_text, model_name, base_url, api_key)
+    query_embedding = embed_text(query_text, model_name, base_url, api_key)
 
     # Connect to MongoDB collection
     db = connect_to_mongo(db_name=db_name, mongo_uri=mongo_uri)
