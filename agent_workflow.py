@@ -1,6 +1,7 @@
 import os
 import sys
 import datetime
+from itertools import cycle
 from langchain import hub
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
@@ -27,6 +28,23 @@ os.environ["OPENAI_API_KEY"] = "sk-tejMSVz1e3ziu6nB0yP2wLiaCUp2jR4Jtf4uaAoXNro6Y
 os.environ["LANGCHAIN_API_KEY"] = "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"
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_PROJECT"] = "Bio3_agent"
+
+API_KEYS = [
+    "sk-tejMSVz1e3ziu6nB0yP2wLiaCUp2jR4Jtf4uaAoXNro6YXmh",
+    "sk-hZAdcvHxCvE7psdje4SezVNHDqOLWO1Ar58sldOK7R741zK6",
+    "sk-VTpN30Day8RP7IDVVRVWx4vquVhGViKftikJw82WIr94DaiC",
+]
+
+api_key_cycle = cycle(API_KEYS)
+
+
+def get_llm(base_url="https://api.aiproxy.io/v1", model="gpt-4o-mini", temperature=0):
+    api_key = next(api_key_cycle)
+    print("Using API key:", api_key)
+    return ChatOpenAI(
+        base_url=base_url, model=model, api_key=api_key, temperature=temperature
+    )
+
 
 # 定义工具列表
 tool_list = [
@@ -56,6 +74,7 @@ tool_list = [
     get_position,
     eat,
 ]
+
 # llm-readable
 tool_functions = """
 1. do_freelance_job(): Perform freelance work
@@ -94,10 +113,6 @@ locations = """
 6. Farm
 """
 
-# 创建LLM和代理
-llm = ChatOpenAI(base_url="https://api.aiproxy.io/v1", model="gpt-4o-mini")
-prompt = hub.pull("wfh/react-agent-executor")
-agent_executor = create_react_agent(llm, tool_list, messages_modifier=prompt)
 
 # 定义提示模板
 obj_planner_prompt = ChatPromptTemplate.from_messages(
@@ -213,47 +228,19 @@ reflection_prompt = ChatPromptTemplate.from_template(
 
 # 创建规划器和重新规划器
 
-obj_planner = obj_planner_prompt | ChatOpenAI(
-    base_url="https://api.aiproxy.io/v1", model="gpt-4o-mini", temperature=1
-).with_structured_output(DailyObjective)
+obj_planner = obj_planner_prompt | get_llm(temperature=1).with_structured_output(
+    DailyObjective
+)
+detail_planner = detail_planner_prompt | get_llm().with_structured_output(DetailedPlan)
+meta_action_sequence_planner = (
+    meta_action_sequence_prompt | get_llm().with_structured_output(MetaActionSequence)
+)
+meta_seq_adjuster = meta_seq_adjuster_prompt | get_llm().with_structured_output(
+    MetaActionSequence
+)
+reflector = reflection_prompt | get_llm().with_structured_output(Reflection)
 
 
-# replanner = replanner_prompt | ChatOpenAI(
-#     base_url="https://api.aiproxy.io/v1", model="gpt-4o-mini", temperature=0
-# ).with_structured_output(Act)
-
-detail_planner = detail_planner_prompt | ChatOpenAI(
-    base_url="https://api.aiproxy.io/v1", model="gpt-4o-mini", temperature=0
-).with_structured_output(DetailedPlan)
-
-meta_action_sequence_planner = meta_action_sequence_prompt | ChatOpenAI(
-    base_url="https://api.aiproxy.io/v1", model="gpt-4o-mini", temperature=0
-).with_structured_output(MetaActionSequence)
-
-meta_seq_adjuster = meta_seq_adjuster_prompt | ChatOpenAI(
-    base_url="https://api.aiproxy.io/v1", model="gpt-4o-mini", temperature=0
-).with_structured_output(MetaActionSequence)
-
-reflector = reflection_prompt | ChatOpenAI(
-    base_url="https://api.aiproxy.io/v1", model="gpt-4o-mini", temperature=0
-).with_structured_output(Reflection)
-
-# # 定义执行步骤函数
-# async def execute_step(state: PlanExecute):
-#     plan = state["plan"]
-#     plan_str = "\n".join(f"{i+1}. {step}" for i, step in enumerate(plan))
-#     task = plan[0]
-#     task_formatted = f"""For the following plan:
-# {plan_str}\n\nYou are tasked with executing step {1}, {task}."""
-#     agent_response = await agent_executor.ainvoke(
-#         {"messages": [("user", task_formatted)]}
-#     )
-#     return {"past_steps": [(task, agent_response["messages"][-1].content)]}
-
-
-# async def plan_step(state: PlanExecute):
-#     plan = await planner.ainvoke({"messages": [("user", state["input"])]})
-#     return {"plan": plan.steps}
 async def generate_daily_objective(state: PlanExecute):
     daily_objective = await obj_planner.ainvoke(
         {
@@ -349,29 +336,6 @@ async def invoke_tool_executor(state: PlanExecute):
     return {"execution_results": execution_results}
 
 
-# async def replan_step(state: PlanExecute):
-#     try:
-#         output = await replanner.ainvoke(state)
-#         if isinstance(output.action, Response):
-#             return {"response": output.action.response}
-#         elif isinstance(output.action, Plan):
-#             return {"plan": output.action.steps}
-#         else:
-#             return {
-#                 "response": "Unable to determine next action. Please provide more information."
-#             }
-#     except Exception as e:
-#         error_message = f"An error occurred while planning: {str(e)}"
-#         return {"response": error_message}
-
-
-# def should_end(state: PlanExecute) -> Literal["Executor", "__end__"]:
-#     if "response" in state and state["response"]:
-#         return "__end__"
-#     else:
-#         return "Executor"
-
-
 # # 创建工作流
 workflow = StateGraph(PlanExecute)
 workflow.add_node("Objectives_planner", generate_daily_objective)
@@ -380,16 +344,12 @@ workflow.add_node("meta_action_sequence", generate_meta_action_sequence)
 workflow.add_node("tool_executor", invoke_tool_executor)
 workflow.add_node("reflector", generate_reflection)
 
-# workflow.add_node("Executor", execute_step)
-# workflow.add_node("replan", replan_step)
 workflow.add_edge(START, "Objectives_planner")
 workflow.add_edge("Objectives_planner", "detailed_planner")
 workflow.add_edge("detailed_planner", "meta_action_sequence")
 workflow.add_edge("meta_action_sequence", "tool_executor")
 workflow.add_edge("tool_executor", "reflector")
 workflow.add_edge("reflector", END)
-# workflow.add_edge("Executor", "replan")
-# workflow.add_conditional_edges("replan", should_end)
 app = workflow.compile()
 
 
@@ -397,8 +357,97 @@ app = workflow.compile()
 async def main():
     config = {"recursion_limit": 10}
     test_cases = [
-        # {"input": "go to the farm, do a freelance job for 2 hours, then go home and sleep for 8 hours"},
-        # {"input": "study for 3 hours, then do a public job for 4 hours"},
+        {
+            "userid": 1,
+            "input": """userid=1,
+            username="Alice",
+            gender="女",
+            slogan="知识就是力量",
+            description="一个爱学习的大学生",
+            role="学生",
+            task="每天至少学习8小时，期末考试取得优异成绩",
+            """,
+            "tool_functions": tool_functions,
+            "locations": locations,
+        },
+        {
+            "userid": 2,
+            "input": """userid=2,
+            username="Bob",
+            gender="男",
+            slogan="交易的艺术",
+            description="一个精明的商人",
+            role="商人",
+            task="每天至少交易一次，寻找最佳交易机会",
+            """,
+            "tool_functions": tool_functions,
+            "locations": locations,
+        },
+        {
+            "userid": 3,
+            "input": """userid=3,
+            username="Charlie",
+            gender="女",
+            slogan="探索未知",
+            description="一个喜欢探险的冒险家",
+            role="冒险家",
+            task="每天至少探险一次，寻找宝藏",
+            """,
+            "tool_functions": tool_functions,
+            "locations": locations,
+        },
+        {
+            "userid": 4,
+            "input": """userid=4,
+            username="David",
+            gender="男",
+            slogan="拯救世界",
+            description="一个勇敢的科学家",
+            role="科学家",
+            task="每天至少发明一项新技术，解决一个世界问题",
+            """,
+            "tool_functions": tool_functions,
+            "locations": locations,
+        },
+        {
+            "userid": 5,
+            "input": """userid=5,
+            username="Eve",
+            gender="女",
+            slogan="艺术的魅力",
+            description="一个有才华的艺术家",
+            role="艺术家",
+            task="每天至少创作一幅画，展示艺术才华",
+            """,
+            "tool_functions": tool_functions,
+            "locations": locations,
+        },
+        {
+            "userid": 6,
+            "input": """userid=6,
+            username="Frank",
+            gender="男",
+            slogan="Serve the people",
+            description="Enthusiastic about community work, enjoys communicating with people and exploring different places",
+            role="Ordinary Resident",
+            task="Help complete community voting and election work, communicate with residents to understand their needs and ideas",
+            """,
+            "tool_functions": tool_functions,
+            "locations": locations,
+        },
+        {
+            "userid": 7,
+            "input": """userid=7,
+            username="Grace",
+            gender="女",
+            slogan="Strive for a better life",
+            description="Busy looking for a job, very occupied",
+            role="Job Seeker",
+            task="Submit resumes, attend interviews, and search for jobs every day",
+            """,
+            "tool_functions": tool_functions,
+            "locations": locations,
+        },
         {
             "userid": 8,
             "input": """userid=8,
@@ -412,11 +461,32 @@ async def main():
             "tool_functions": tool_functions,
             "locations": locations,
         },
-        # {"input": "check character stats and inventory, then go to the hospital to see a doctor"},
-        # {"input": "navigate to the park, start a conversation with user123 saying 'Hello!', then end the conversation"},
-        # {"input": "do a freelance job for 4 hours, study for 2 hours, then sleep for 6 hours"},
-        # {"input": "check character stats, do a public job for 3 hours, then study for 2 hours"},
-        # {"input": "navigate to the gym, do a freelance job for 2 hours, then go home and sleep for 7 hours"},
+        {
+            "userid": 9,
+            "input": """userid=9,
+            username="Ivy",
+            gender="女",
+            slogan="Shopping makes me happy",
+            description="A fashion blogger who enjoys purchasing various goods.",
+            role="Shopping Enthusiast",
+            task="Buy different things every day, acquire various items",
+            """,
+            "tool_functions": tool_functions,
+            "locations": locations,
+        },
+        {
+            "userid": 10,
+            "input": """userid=10,
+            username="Jack",
+            gender="男",
+            slogan="The world is big, I want to see it all",
+            description="A traveler who loves to explore new places",
+            role="Traveler",
+            task="Visit at least three places every day, even if they are repeated",
+            """,
+            "tool_functions": tool_functions,
+            "locations": locations,
+        },
     ]
 
     for case in test_cases:
