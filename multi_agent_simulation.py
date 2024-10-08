@@ -3,13 +3,11 @@ import random
 from datetime import datetime
 from agent_workflow import app
 from dataclasses import dataclass
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
 import threading
 from concurrent.futures import ThreadPoolExecutor
-import os
 from loguru import logger
-from tool_executor import trade_item
+import os
+
 from database.mongo_utils import get_latest_k_documents
 from database import config
 
@@ -50,6 +48,8 @@ locations = """
 5. School
 6. Farm
 """
+
+log_dir = None
 
 
 @dataclass
@@ -93,7 +93,6 @@ class Agent:
         return random.sample(possible_items, num_items)
 
     async def take_action(self, app, config):
-        # objective = self.generate_objective()
         objective = self.generate_profile()
         logger.info(objective)
         max_steps = 20  # 设置最大步骤数
@@ -103,7 +102,7 @@ class Agent:
                 if k != "__end__":
                     print(f"{self.username}: {v}")
                     # 记录信息到文件
-                    log_filename = f"agent_{self.userid}.log"
+                    log_filename = f"{log_dir}/agent_{self.userid}.log"
                     with open(log_filename, "a") as log_file:
                         log_file.write(f"{self.username}: {v}\n")
                     # if k == "meta_action_sequence":
@@ -125,50 +124,6 @@ class Agent:
                     log_file.write(f"{self.username}: 达到最大步骤数\n")
                 break
         # self.update_stats()
-
-    def generate_objective(self) -> str:
-        llm = ChatOpenAI(
-            base_url="https://api.aiproxy.io/v1", model="gpt-4o-mini", timeout=30
-        )  # 30秒超时
-
-        plan_prompt = ChatPromptTemplate.from_template(
-            """Generate a plan based on the agent's personal information and tasks. The plan should detail the agent's actions for an entire day, specifying how many hours each task takes. Avoid using vague terms.
-
-Agent's personal information:
-Name: {username}
-Description: {description}
-Role: {role}
-Task: {task}
-Location: {location}
-Status: {stats}
-Inventory: {inventory}
-
-You can use ONLY the following tool functions in your plan. Do not use any functions that are not listed here:
-{tool_functions}
-
-Available locations:
-{locations}
-
-Output the plan in a single sentence without any unnecessary words.
-Here is the format example and your plan should NOT be longer than this example:
-Wake up at 7 AM, go to the park and chat with people for 1 hour, study at school for 6 hours, have lunch at the restaurant, study at the school for three hours, return home and sleep."""
-        )
-
-        formatted_prompt = plan_prompt.format(
-            username=self.username,
-            description=self.description,
-            role=self.role,
-            task=self.task,
-            location=self.location,
-            stats=self.stats,
-            inventory=self.inventory,
-            tool_functions=tool_functions,
-            locations=locations,
-        )
-
-        response = llm.invoke(formatted_prompt)
-        print(response.content)
-        return response.content
 
     def generate_profile(self):
         return {
@@ -330,9 +285,8 @@ agents = [
 
 
 def agent_task(agent):
-    # objective = agent.generate_objective()
     objective = agent.generate_profile()
-    log_filename = f"agent_{agent.userid}.log"
+    log_filename = f"{log_dir}/agent_{agent.userid}.log"
     with open(log_filename, "a") as log_file:
         log_file.write(f"Agent {agent.userid}: {agent.username}\n")
         log_file.write(f"Objective: {objective}\n")
@@ -354,7 +308,7 @@ def whole_day_planning_main():
 
 
 async def agent_routine(agent, config, days):
-    log_filename = f"agent_{agent.userid}.log"
+    log_filename = f"{log_dir}/agent_{agent.userid}.log"
     for day in range(1, days + 1):
         with open(log_filename, "a") as log_file:
             log_file.write(f"\n--- 第 {day} 天 {agent.username} ---\n")
@@ -372,7 +326,7 @@ async def agent_routine(agent, config, days):
 
 
 async def run_agent(agent, config, days):
-    log_filename = f"agent_{agent.userid}.log"
+    log_filename = f"{log_dir}/agent_{agent.userid}.log"
     with open(log_filename, "a") as log_file:
         log_file.write(f"\n--- {agent.username} 的初始状态 ---\n")
         log_file.write(str(agent) + "\n")
@@ -380,8 +334,16 @@ async def run_agent(agent, config, days):
     await agent_routine(agent, config, days)
 
 
-# 主函数
+def create_log_directory():
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_dir = f"logs/run_{timestamp}"
+    os.makedirs(log_dir, exist_ok=True)
+    return log_dir
+
+
 async def main():
+    global log_dir
+    log_dir = create_log_directory()
     config = {"recursion_limit": 3000}
     days = 10
 
