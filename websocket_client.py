@@ -62,7 +62,7 @@ async def send_request(uri):
                    .set_tool_functions(tool_functions)
                    .set_locations(locations)
                    .build())
-
+        print(json.dumps(request))
         # 发送请求
         await websocket.send(json.dumps(request))
         print("已发送请求")
