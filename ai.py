@@ -2,6 +2,7 @@ import asyncio
 import websockets
 import json
 import os
+import ssl
 from datetime import datetime, timedelta
 from task_scheduler import TaskScheduler, Task
 from collections import defaultdict
@@ -200,10 +201,14 @@ def persist_data(websocket_address):
 
 
 async def main():
-    host = "localhost"
-    port = 6789
-    server = await websockets.serve(handler, host, port)
-    print(f"WebSocket server started at ws://{host}:{port}")
+    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ssl_context.load_cert_chain(
+        certfile="/etc/ssl/certs/bio3.crt", keyfile="/etc/ssl/certs/bio3.key"
+    )
+    host = "0.0.0.0"
+    port = 8097
+    server = await websockets.serve(handler, host, port, ssl=ssl_context)
+    print(f"WebSocket server started at wss://{host}:{port}")
     await server.wait_closed()
 
 

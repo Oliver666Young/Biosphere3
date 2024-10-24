@@ -4,7 +4,7 @@ import json
 
 
 async def test_client():
-    uri = "ws://localhost:6789"  # 与 ai.py 中的 WebSocket 服务器地址和端口匹配
+    uri = "wss://localhost:6789"  # 与 ai.py 中的 WebSocket 服务器地址和端口匹配
     async with websockets.connect(uri) as websocket:
         # 发送初始化消息以获取 character_id
         init_message = {
