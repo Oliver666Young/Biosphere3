@@ -34,9 +34,9 @@ Constraints: Must in (school,workshop,home,farm,mall,square,hospital,fruit,harve
 """
 
 
-def generate_initial_state(websocket):
+def generate_initial_state(character_id, websocket):
     initial_state = {
-        "userid": 12,
+        "character_id": character_id,
         "character_stats": {
             "name": "Alice",
             "gender": "Female",
@@ -81,47 +81,47 @@ def generate_initial_state(websocket):
 
 
 class LangGraphInstance:
-    def __init__(self, user_id, websocket=None):
-        self.user_id = user_id
+    def __init__(self, character_id, websocket=None):
+        self.character_id = character_id
         self.websocket = websocket
         # 初始化 langgraph 实例
-        # 根据user_id 检索数据库中的信息，更新stat
-        self.state = RunningState(**generate_initial_state(self.websocket))
+        # 根据character_id 检索数据库中的信息，更新stat
+        self.state = RunningState(
+            **generate_initial_state(self.character_id, self.websocket)
+        )
         self.graph = self._get_workflow_with_listener()
         self.listener_task = asyncio.create_task(self.listener())
-        #self.schedule_task = asyncio.create_task(self.schedule_messages())
+        # self.schedule_task = asyncio.create_task(self.schedule_messages())
 
         # TODO We should get and init state from database
-        # self.state: RunningState = initialize_running_state(user_id,character_params, decision_params, meta_params)
-        logger.info(f"User {self.user_id} workflow initialized")
+        # self.state: RunningState = initialize_running_state(character_id ,character_params, decision_params, meta_params)
+        logger.info(f"User {self.character_id} workflow initialized")
         self.task = asyncio.create_task(self.a_run())
 
     # 生产者listener，独立于graph运行
     async def listener(self):
         websocket = self.state["websocket"]
         message_queue = self.state["message_queue"]
-        logger.info(f"👂 User {self.user_id}: LISTENER started...")
+        logger.info(f"👂 User {self.character_id}: LISTENER started...")
 
         try:
             async for message in websocket:
                 data = json.loads(message)
                 await message_queue.put(data)
                 logger.info(
-                    f"👂 User {self.user_id}: Received message: {data} and put into queue"
+                    f"👂 User {self.character_id}: Received message: {data} and put into queue"
                 )
         except websockets.ConnectionClosed:
-            logger.error(f"User {self.user_id}: WebSocket connection closed.")
+            logger.error(f"User {self.character_id}: WebSocket connection closed.")
 
         except Exception as e:
-            logger.error(f"User {self.user_id}: Error in listener: {e}")
-
-
+            logger.error(f"User {self.character_id}: Error in listener: {e}")
 
     async def send_msg_to_game(self, message_name, data):
         message = {
             "messageName": message_name,
             "data": data,
-            "characterId": self.user_id,
+            "characterId": self.character_id,
         }
         await self.websocket.send(json.dumps(message))
 
@@ -129,41 +129,43 @@ class LangGraphInstance:
         try:
             await self.graph.ainvoke(self.state)
         except Exception as e:
-            logger.error(f"User {self.user_id} Error in workflow: {e}")
+            logger.error(f"User {self.character_id} Error in workflow: {e}")
 
     async def process_messages(self, state: RunningState):
         while True:
             message = await state["message_queue"].get()
 
             if message is None:
-                logger.error(f"User {self.user_id}: WebSocket connection closed.")
+                logger.error(f"User {self.character_id}: WebSocket connection closed.")
                 break
-            logger.info(f"User {self.user_id}: Received message: {message}")
+            logger.info(f"User {self.character_id}: Received message: {message}")
 
             message_name = message.get("messageName")
             if message_name == "action_result":
                 # 处理动作结果
                 self.state["decision"]["action_result"].append(message["data"])
                 logger.info(
-                f"🏃 User {self.user_id}: Received action result: {message['data']}"
-            )
+                    f"🏃 User {self.character_id}: Received action result: {message['data']}"
+                )
             elif message_name == "gameevent":
                 pass
 
             elif message_name == "onestep":
                 return "Objectives_planner"
-            
+
             elif message_name == "check":
-               pprint(self.state["decision"]["actionresult"])
+                pprint(self.state["decision"]["actionresult"])
 
             else:
-                logger.error(f"User {self.user_id}: Unknown message: {message_name}")
+                logger.error(
+                    f"User {self.character_id}: Unknown message: {message_name}"
+                )
             # await self.state['message_queue'].task_done()
 
     def _get_workflow_with_listener(self):
         workflow = StateGraph(RunningState)
         # workflow.add_node("Process_Messages", self.process_messages)
-        workflow.add_node("")
+        # workflow.add_node("")
         workflow.add_node("Objectives_planner", generate_daily_objective)
         workflow.add_node("meta_action_sequence", generate_meta_action_sequence)
         workflow.add_node("adjust_meta_action_sequence", adjust_meta_action_sequence)
@@ -172,10 +174,10 @@ class LangGraphInstance:
 
         # 定义工作流的路径
         workflow.add_edge("Objectives_planner", "meta_action_sequence")
-        workflow.add_edge(
-            "meta_action_sequence", "adjust_meta_action_sequence"
-        )  # 循环回消息处理
-        workflow.add_edge("adjust_meta_action_sequence", "")
+        workflow.add_edge("meta_action_sequence", "adjust_meta_action_sequence")
+        # # 循环回消息处理
+        # workflow.add_edge("adjust_meta_action_sequence", "")
+        workflow.set_finish_point("adjust_meta_action_sequence")
 
         return workflow.compile()
 
@@ -184,8 +186,10 @@ class LangGraphInstance:
         workflow.add_node("Objectives_planner", generate_daily_objective)
         workflow.add_node("meta_action_sequence", generate_meta_action_sequence)
         workflow.add_node("adjust_meta_action_sequence", adjust_meta_action_sequence)
+
         workflow.set_entry_point("Objectives_planner")
         workflow.set_finish_point("adjust_meta_action_sequence")
+
         workflow.add_edge("Objectives_planner", "meta_action_sequence")
         workflow.add_edge("meta_action_sequence", "adjust_meta_action_sequence")
         # workflow.add_conditional_edges("replan", should_end)
